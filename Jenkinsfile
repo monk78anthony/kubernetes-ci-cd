@@ -1,27 +1,36 @@
 node {
+    def app
 
-    checkout scm
+    stage('Clone repository') {
+        /* Let's make sure we have the repository cloned to our workspace */
 
-    env.DOCKER_API_VERSION="1.23"
-    
-    sh "git rev-parse --short HEAD > commit-id"
+        checkout scm
+    }
 
-    tag = readFile('commit-id').replace("\n", "").replace("\r", "")
-    appName = "hello-kenzan"
-    registryHost = "127.0.0.1:30400/"
-    imageName = "${registryHost}${appName}:${tag}"
-    env.BUILDIMG=imageName
+    stage('Build image') {
+        /* This builds the actual image; synonymous to
+         * docker build on the command line */
 
-    stage "Build"
-    
-        sh "docker build -t ${imageName} -f applications/hello-kenzan/Dockerfile applications/hello-kenzan"
-    
-    stage "Push"
+        app = docker.build("monk78anthony/timetracker")
+    }
 
-        sh "docker push ${imageName}"
+    stage('Test image') {
+        /* Ideally, we would run a test framework against our image.
+         * For this example, we're using a Volkswagen-type approach ;-) */
 
-    stage "Deploy"
+        app.inside {
+            sh 'echo "Tests passed"'
+        }
+    }
 
-        kubernetesDeploy configs: "applications/${appName}/k8s/*.yaml", kubeconfigId: 'kenzan_kubeconfig'
-
+    stage('Push image') {
+        /* Finally, we'll push the image with two tags:
+         * First, the incremental build number from Jenkins
+         * Second, the 'latest' tag.
+         * Pushing multiple tags is cheap, as all the layers are reused. */
+        docker.withRegistry('https://registry.hub.docker.com', 'dockerhub') {
+            app.push("${env.BUILD_NUMBER}")
+            app.push("latest")
+        }
+    }
 }
